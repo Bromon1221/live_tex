@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LaTeX Live PDF Preview</title>
-  <!-- MathJax (TeX → HTML 数式レンダリング) -->
   <script>
     window.MathJax = {
       tex: {inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$'], ['\\[','\\]']]},
@@ -12,7 +11,6 @@
     };
   </script>
   <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
-  <!-- html2pdf (右側のHTMLをPDFに変換) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
     :root {
@@ -28,7 +26,7 @@
     .app{display:grid;grid-template-columns:1fr 1fr;height:calc(100% - 56px)}
     .left,.right{padding:12px;overflow:auto}
     .card{height:100%;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
-    textarea{flex:1;resize:none;width:100%;background:#0c1330;border:1px solid var(--border);border-radius:10px;color:var(--text);padding:12px;font-size:14px;line-height:1.6}
+    textarea{flex:1;resize:vertical;width:100%;background:#0c1330;border:1px solid var(--border);border-radius:10px;color:var(--text);padding:12px;font-size:14px;line-height:1.6;min-height:50vh}
     input[type="text"], select{width:100%;background:#0c1330;border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px}
     label{font-size:12px;color:var(--muted)}
     .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -42,6 +40,9 @@
     iframe{width:100%;height:100%;border:1px solid var(--border);border-radius:10px;background:white}
     @media (max-width: 980px){ .app{grid-template-columns:1fr; height:auto} iframe{min-height:50vh} }
     .hint{font-size:12px;color:var(--muted)}
+    .insert-bar{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+    .insert-bar button{background:#1e293b;color:#e2e8f0;border:1px solid #334155;padding:4px 8px;border-radius:6px;font-size:12px;cursor:pointer}
+    .insert-bar button:hover{background:#334155}
   </style>
 </head>
 <body>
@@ -73,22 +74,19 @@
           <input id="title" type="text" placeholder="LaTeX Live Preview" />
         </div>
         <div>
+          <label>章・画像テンプレ挿入</label>
+          <div class="insert-bar">
+            <button onclick="insertSnippet('section')">\section{章タイトル}</button>
+            <button onclick="insertSnippet('subsection')">\subsection{小見出し}</button>
+            <button onclick="insertSnippet('subsubsection')">\subsubsection{さらに小さい見出し}</button>
+            <button onclick="insertSnippet('figure')">figure テンプレ</button>
+            <button onclick="insertSnippet('itemize')">箇条書き</button>
+          </div>
+        </div>
+        <div>
           <label>本文（TeX）</label>
-          <textarea id="source" spellcheck="false">% ここに本文を書いてください。数式は $a^2+b^2=c^2$ や \[ E=mc^2 \] のように。
-\\section{はじめに}
-このページは、左でTeXを編集し、右でライブPDF風プレビューを表示します。\\par
-日本語は LuaLaTeX を意識したフォント設定にしていませんが、MathJaxで数式は正しく描画されます。
-
-\\subsection{数式}
-オイラーの公式： $e^{i\pi}+1=0$.
-
-\\subsection{箇条書き}
-\\begin{itemize}
-  \\item 項目1
-  \\item 項目2
-\\end{itemize}
-</textarea>
-          <div class="hint">※ 右側は「TeX→HTML→PDF化」の簡易表示です。本格的なTeX→PDFをブラウザだけで行う場合は WASMエンジン（Tectonic/TeXLive.js）が必要になります。</div>
+          <textarea id="source" spellcheck="false"></textarea>
+          <div class="hint">章・画像テンプレートボタンを押すと、カーソル位置にコードが挿入されます。</div>
         </div>
         <div class="toolbar">
           <button class="btn" id="compile">プレビュー更新</button>
@@ -119,22 +117,42 @@
     const $ = (id)=>document.getElementById(id);
     const statusEl = $("status");
 
+    function insertAtCursor(textarea, text) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const before = textarea.value.substring(0, start);
+      const after  = textarea.value.substring(end, textarea.value.length);
+      textarea.value = before + text + after;
+      textarea.selectionStart = textarea.selectionEnd = start + text.length;
+      textarea.focus();
+    }
+
+    function insertSnippet(type) {
+      const textarea = $("source");
+      let code = '';
+      switch(type){
+        case 'section': code = "\\section{ここに章タイトル}"; break;
+        case 'subsection': code = "\\subsection{ここに小見出し}"; break;
+        case 'subsubsection': code = "\\subsubsection{さらに小さい見出し}"; break;
+        case 'figure': code = "\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.8\\linewidth]{example-image}\n  \\caption{キャプション}\n  \\label{fig:sample}\n\\end{figure}"; break;
+        case 'itemize': code = "\\begin{itemize}\n  \\item 項目1\n  \\item 項目2\n\\end{itemize}"; break;
+      }
+      insertAtCursor(textarea, "\n" + code + "\n");
+    }
+
     function latexToSimpleHtml(tex){
-      // 非厳密: よく使う環境だけ軽く変換（本格変換は latex.js などを使用）
       let html = tex
         .replace(/\\section\{([^}]*)\}/g, '<h2>$1</h2>')
         .replace(/\\subsection\{([^}]*)\}/g, '<h3>$1</h3>')
         .replace(/\\subsubsection\{([^}]*)\}/g, '<h4>$1</h4>')
         .replace(/\\paragraph\{([^}]*)\}/g, '<h5>$1</h5>')
         .replace(/\\begin\{itemize\}[\s\S]*?\\end\{itemize\}/g, m=>{
-          const items = m
-            .replace(/\\begin\{itemize\}|\\end\{itemize\}/g,'')
-            .split(/\\item\s*/).filter(Boolean)
-            .map(s=>`<li>${s.trim()}</li>`).join('');
+          const items = m.replace(/\\begin\{itemize\}|\\end\{itemize\}/g,'').split(/\\item\s*/).filter(Boolean).map(s=>`<li>${s.trim()}</li>`).join('');
           return `<ul>${items}</ul>`;
         })
         .replace(/\\par/g, '<p></p>')
-        .replace(/\\\\/g, '<br/>');
+        .replace(/\\\\/g, '<br/>')
+        .replace(/\\includegraphics\[[^\]]*\]\{([^}]*)\}/g, '<div style="text-align:center"><img src="$1" alt="image" style="max-width:90%"></div>');
       return html;
     }
 
@@ -142,55 +160,37 @@
       const title = $("title").value || "LaTeX Live Preview";
       const src = $("source").value;
 
-      // 1) TeXを簡易HTMLへ
       const bodyHtml = latexToSimpleHtml(src);
-
-      // 2) テンプレートに反映
       const tmpl = $("docTemplate").content.cloneNode(true);
       tmpl.getElementById("docTitle").textContent = title;
       tmpl.getElementById("docBody").innerHTML = bodyHtml;
 
-      // 3) MathJax で数式レンダリング（SVG）
       const container = document.createElement('div');
       container.appendChild(tmpl);
-      document.body.appendChild(container); // 一時的にDOMに載せる
+      document.body.appendChild(container);
       await MathJax.typesetPromise([container]);
 
-      // 4) HTML→PDF 変換（html2pdf）
       const node = container.querySelector('#paper');
       const opt = {
-        margin:       [10,10,10,10],
-        filename:     'preview.pdf',
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        margin:[10,10,10,10], filename:'preview.pdf', image:{ type:'jpeg', quality:0.98 }, html2canvas:{ scale:2, useCORS:true }, jsPDF:{ unit:'mm', format:'a4', orientation:'portrait' }
       };
       const worker = html2pdf().set(opt).from(node);
       const pdfBlob = await worker.outputPdf('blob');
 
-      // 5) iframe に表示
       const url = URL.createObjectURL(pdfBlob);
-      const frame = $("pdfFrame");
-      frame.src = url;
-
-      // 6) 後片付け
+      $("pdfFrame").src = url;
       setTimeout(()=>{ document.body.removeChild(container); }, 0);
       statusEl.textContent = new Date().toLocaleTimeString() + ' に更新';
     }
 
-    function debounce(fn, ms){
-      let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
-    }
-
+    function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), ms); }; }
     const debouncedRender = debounce(renderPreview, 400);
 
-    // イベント
     $("compile").addEventListener('click', renderPreview);
     $("source").addEventListener('input', debouncedRender);
     $("title").addEventListener('input', debouncedRender);
 
     $("exportPdf").addEventListener('click', async ()=>{
-      // すでに iframe に表示しているBlobを再利用
       const frame = $("pdfFrame");
       if (!frame.src) { await renderPreview(); }
       const a = document.createElement('a');
@@ -198,21 +198,12 @@
     });
 
     $("reset").addEventListener('click', ()=>{
-      // 初期値に戻す
       $("title").value = 'LaTeX Live Preview';
       $("source").value = `% ここに本文を書いてください。数式は $a^2+b^2=c^2$ や \\[ E=mc^2 \\] のように。\n\\section{はじめに}\nこのページは、左でTeXを編集し、右でライブPDF風プレビューを表示します。\\par\n日本語は LuaLaTeX を意識したフォント設定にしていませんが、MathJaxで数式は正しく描画されます。\n\n\\subsection{数式}\nオイラーの公式： $e^{i\\pi}+1=0$.\n\n\\subsection{箇条書き}\n\\begin{itemize}\n  \\item 項目1\n  \\item 項目2\n\\end{itemize}`;
       renderPreview();
     });
 
-    // 初回
     renderPreview();
   </script>
-
-  <!-- --- 参考: 本格的に TeX→PDF をブラウザ内で行う方法 ---
-  1) WASM の LaTeX エンジン（例: Tectonic/TeXLive.js）をCDNから読み込む
-  2) 右側のPDFは Blob にしたPDFを iframe.src に設定
-  3) TeX の依存ファイル（.sty, .cls, フォント等）を同梱またはfetch
-  GitHub Pagesでも動きますが初回ロードが重い点に注意。
-  -->
 </body>
 </html>
